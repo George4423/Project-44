@@ -1,0 +1,379 @@
+// 3.1 //
+SELECT 
+    ph.cook_id AS cook_id,
+    AVG(g.grade) AS average_score
+FROM 
+    participation_history ph
+JOIN 
+    grades g ON ph.cook_id = g.cookid AND ph.episode_number = g.episode
+GROUP BY 
+    ph.cook_id
+ORDER BY 
+    ph.cook_id;
+    
+    
+    
+SELECT 
+    ph.cuisine,
+    AVG(g.grade) AS average_score
+FROM 
+    participation_history ph
+JOIN 
+    grades g ON ph.episode_number = g.episode AND ph.cook_id = g.cookid
+GROUP BY 
+    ph.cuisine
+ORDER BY 
+    ph.cuisine;
+
+
+// 3.2 //
+SELECT 
+    c.idcooks,
+    c.first_name,
+    c.last_name
+FROM 
+    cooks c
+JOIN 
+    cooks_cuisines cc ON c.idcooks = cc.cook_id
+WHERE 
+    cc.country = 'Egyptian';  
+
+SELECT DISTINCT
+    ph.cook_id AS cook_id,
+    c.first_name,c.last_name
+FROM
+    participation_history ph
+JOIN
+    cooks c ON ph.cook_id = c.idcooks
+WHERE
+    ph.cuisine = 'Egyptian'  
+    AND FLOOR((ph.episode_number - 1) / 10) + 1 = 5  
+ORDER BY
+    ph.cook_id;
+// 3.3 //
+SELECT 
+    c.idcooks,
+    c.first_name,
+    c.last_name,
+    COUNT(cr.recipe_id) AS recipe_count,
+    TIMESTAMPDIFF(YEAR, c.birth_date, CURDATE()) AS age
+FROM 
+    cooks c
+JOIN 
+    cooks_recipes cr ON c.idcooks = cr.cook_id
+GROUP BY 
+    c.idcooks
+HAVING 
+    age < 30
+ORDER BY 
+    recipe_count DESC
+LIMIT 10;  
+
+
+// 3.4 //
+SELECT 
+    c.idcooks,
+    c.first_name,
+    c.last_name
+FROM 
+    cooks c
+LEFT JOIN 
+    judge j ON c.idcooks = j.judgeid
+WHERE 
+    j.judgeid IS NULL;
+
+// 3.5 // 
+SELECT 
+    j1.judgeid AS judge1_id,
+    j2.judgeid AS judge2_id,
+    j1.year_block,
+    j1.appearances
+FROM 
+    (SELECT 
+         judgeid,
+         FLOOR((episodenumber - 1) / 10) + 1 AS year_block,
+         COUNT(*) AS appearances
+     FROM 
+         judge
+     GROUP BY 
+         judgeid, FLOOR((episodenumber - 1) / 10) + 1
+     HAVING 
+         COUNT(*) > 3
+    ) AS j1
+JOIN 
+    (SELECT 
+         judgeid,
+         FLOOR((episodenumber - 1) / 10) + 1 AS year_block,
+         COUNT(*) AS appearances
+     FROM 
+         judge
+     GROUP BY 
+         judgeid, FLOOR((episodenumber - 1) / 10) + 1
+     HAVING 
+         COUNT(*) > 3
+    ) AS j2 ON j1.year_block = j2.year_block AND j1.appearances = j2.appearances AND j1.judgeid < j2.judgeid
+ORDER BY 
+    j1.year_block, j1.appearances, j1.judgeid;
+
+
+// 3.6 //
+
+SELECT mt1.name as Tag1, mt2.name as Tag2, COUNT(*) as Frequency
+FROM meal_type mt1
+JOIN meal_type mt2 ON mt1.recipe_id = mt2.recipe_id AND mt1.name < mt2.name
+JOIN participation_history ph ON mt1.recipe_id = ph.recipe_id
+GROUP BY mt1.name, mt2.name
+ORDER BY Frequency DESC
+LIMIT 3;
+ 
+OR
+
+
+CREATE INDEX idx_recipe_id_name ON meal_type(recipe_id, name);
+
+
+
+SELECT mt1.name as Tag1, mt2.name as Tag2, COUNT(*) as Frequency
+FROM meal_type mt1
+FORCE INDEX (idx_recipe_id_name)
+JOIN meal_type mt2 FORCE INDEX (idx_recipe_id_name) ON mt1.recipe_id = mt2.recipe_id AND mt1.name < mt2.name
+JOIN participation_history ph FORCE INDEX (idx_recipe_id) ON mt1.recipe_id = ph.recipe_id
+GROUP BY mt1.name, mt2.name
+ORDER BY Frequency DESC
+LIMIT 3;
+
+
+// 3.7//
+
+SELECT 
+    ph.cook_id,
+    COUNT(*) AS participation_count
+FROM 
+    participation_history ph
+GROUP BY 
+    ph.cook_id
+HAVING 
+    participation_count <= (SELECT MAX(participation_count) - 5 FROM (SELECT COUNT(*) AS participation_count FROM participation_history GROUP BY cook_id) AS max_participations)
+ORDER BY 
+    participation_count DESC;
+
+// 3.8 //
+SELECT ph.episode_number, SUM(eq.howmany) AS total_equipment_used
+FROM participation_history ph
+JOIN eq ON ph.recipe_id = eq.recipeid
+GROUP BY ph.episode_number
+ORDER BY total_equipment_used DESC
+LIMIT 1;
+
+
+OR
+
+
+CREATE INDEX idx_episode_number_recipe_id ON participation_history(episode_number, recipe_id);
+SELECT ph.episode_number, SUM(eq.howmany) AS total_equipment_used
+FROM participation_history ph
+JOIN eq ON ph.recipe_id = eq.recipeid
+GROUP BY ph.episode_number
+ORDER BY total_equipment_used DESC
+LIMIT 1;
+
+// 3.9 //
+
+SELECT
+    FLOOR((ph.episode_number - 1) / 10) + 1 AS year_group,
+    SUM(total_carbs) / (COUNT(DISTINCT ph.episode_number) * 10) AS avg_carbs_per_year
+FROM
+    participation_history ph
+JOIN
+    (
+        SELECT
+            recipeid,
+            SUM((howmuch / 100) * carbs) AS total_carbs
+        FROM
+            ing
+        GROUP BY
+            recipeid
+    ) rc
+    ON ph.recipe_id = rc.recipeid
+GROUP BY
+    FLOOR((ph.episode_number - 1) / 10) + 1;
+
+
+
+// 3.10//
+
+WITH YearlyParticipations AS (
+    SELECT 
+        cuisine,
+        FLOOR((episode_number - 1) / 10) + 1 AS year,  -- Corrected year calculation
+        COUNT(*) AS yearly_participation
+    FROM 
+        participation_history
+    GROUP BY 
+        cuisine, FLOOR((episode_number - 1) / 10) + 1
+    HAVING 
+        COUNT(*) >= 3  -- Ensuring at least 3 participations each year
+),
+
+
+TwoYearTotals AS (
+    SELECT 
+        A.cuisine,
+        A.year AS year1,
+        A.year + 1 AS year2,
+        A.yearly_participation AS Year1Participation,
+        B.yearly_participation AS Year2Participation,
+        A.yearly_participation + B.yearly_participation AS TotalParticipation
+    FROM 
+        YearlyParticipations A
+    JOIN 
+        YearlyParticipations B ON A.cuisine = B.cuisine AND A.year = B.year - 1
+)
+
+
+SELECT 
+    X.cuisine AS CuisineX,
+    Y.cuisine AS CuisineY,
+    X.year1 AS StartYearX,
+    X.year2 AS EndYearX,
+    Y.year1 AS StartYearY,
+    Y.year2 AS EndYearY,
+    X.Year1Participation AS Year1ParticipationX,
+    X.Year2Participation AS Year2ParticipationX,
+    Y.Year1Participation AS Year1ParticipationY,
+    Y.Year2Participation AS Year2ParticipationY,
+    X.TotalParticipation AS TotalParticipationX,
+    Y.TotalParticipation AS TotalParticipationY
+FROM 
+    TwoYearTotals X
+JOIN 
+    TwoYearTotals Y ON X.TotalParticipation = Y.TotalParticipation
+    AND X.cuisine < Y.cuisine  
+ORDER BY 
+    X.TotalParticipation DESC, X.cuisine, Y.cuisine;
+// 3.11 //
+
+SELECT 
+    CONCAT(j.first_name, ' ', j.last_name) AS judge_name,
+    CONCAT(c.first_name, ' ', c.last_name) AS chef_name,
+    SUM(g.grade) AS total_score
+FROM 
+    grades g
+JOIN 
+    judge jd ON g.judgeid = jd.judgeid AND g.episode = jd.episodenumber
+JOIN 
+    cooks j ON jd.judgeid = j.idcooks
+JOIN 
+    cooks c ON g.cookid = c.idcooks
+GROUP BY 
+    jd.judgeid, g.cookid
+ORDER BY 
+    total_score DESC
+LIMIT 5;
+
+
+// 3.12 //
+WITH EpisodeDifficulty AS (
+    SELECT 
+        ph.episode_number,
+        FLOOR((ph.episode_number - 1) / 10) + 1 AS year,  
+        AVG(r.difficulty) AS average_difficulty
+    FROM 
+        participation_history ph
+    JOIN 
+        recipe r ON ph.recipe_id = r.idrecipe
+    GROUP BY 
+        ph.episode_number
+),
+
+MaxDifficultyPerYear AS (
+    SELECT
+        year,
+        MAX(average_difficulty) AS max_difficulty
+    FROM 
+        EpisodeDifficulty
+    GROUP BY
+        year
+)
+
+-- Find the most difficult episodes per year
+SELECT 
+    ED.year,
+    ED.episode_number,
+    ED.average_difficulty
+FROM 
+    EpisodeDifficulty ED
+INNER JOIN 
+    MaxDifficultyPerYear MD
+ON 
+    ED.year = MD.year AND ED.average_difficulty = MD.max_difficulty
+ORDER BY 
+    ED.year;
+
+// 3.13 //
+
+SELECT 
+    combined.episode_number,
+    SUM(combined.score) AS total_score
+FROM (
+    -- Scores from judges
+    SELECT
+        j.episodenumber AS episode_number,
+        CASE
+            WHEN c.katataksi = 'Γ΄ μάγειρας' THEN 1
+            WHEN c.katataksi = 'Β΄ μάγειρας' THEN 2
+            WHEN c.katataksi = 'Α΄ μάγειρας' THEN 3
+            WHEN c.katataksi = 'Βοηθός Αρχιμάγειρα' THEN 4
+            WHEN c.katataksi = 'Αρχιμάγειρας (σεφ)' THEN 5
+            ELSE 0 -- Handling any unexpected values
+        END AS score
+    FROM 
+        judge j
+    JOIN 
+        cooks c ON j.judgeid = c.idcooks
+
+    UNION ALL
+
+    
+    SELECT
+        ph.episode_number,
+        CASE
+            WHEN c.katataksi = 'Γ΄ μάγειρας' THEN 1
+            WHEN c.katataksi = 'Β΄ μάγειρας' THEN 2
+            WHEN c.katataksi = 'Α΄ μάγειρας' THEN 3
+            WHEN c.katataksi = 'Βοηθός Αρχιμάγειρα' THEN 4
+            WHEN c.katataksi = 'Αρχιμάγειρας (σεφ)' THEN 5
+            ELSE 0
+        END AS score
+    FROM 
+        participation_history ph
+    JOIN 
+        cooks c ON ph.cook_id = c.idcooks
+) AS combined
+GROUP BY 
+    combined.episode_number
+ORDER BY 
+    total_score ASC
+LIMIT 1;
+
+
+
+// 3.14 //
+
+SELECT t.topicname, COUNT(*) AS appearance_count
+FROM participation_history ph
+JOIN topic t ON ph.recipe_id = t.recipeid
+GROUP BY t.topicname
+ORDER BY appearance_count DESC
+LIMIT 1;
+
+// 3.15 //
+SELECT fg.idfood_group, fg.description, fg.name
+FROM food_group fg
+WHERE fg.idfood_group NOT IN (
+    SELECT i.food_groupid
+    FROM participation_history ph
+    JOIN basic_ingredient bi ON ph.recipe_id = bi.recipeid
+    JOIN ingredients i ON bi.id = i.ingredients_id
+)
+
